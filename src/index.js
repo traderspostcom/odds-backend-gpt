@@ -2,30 +2,29 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import { validateEnv } from './util/env.js';
-import healthRouter from './routes/health.js';
-import gptRouter from './routes/gpt.js';
-
-validateEnv();
 
 const app = express();
-app.use(cors({ origin: '*', maxAge: 600 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(cors({ origin: '*'}));
 app.use(morgan('tiny'));
 
-// Simple API key gate for GPT Actions (optional but recommended)
-app.use((req, res, next) => {
-  const required = process.env.PUBLIC_API_KEY;
-  if (!required) return next();
-  const key = req.header('x-api-key');
-  if (key !== required) return res.status(401).json({ ok: false, reason: 'unauthorized' });
-  next();
+app.get('/', (req, res) => {
+  res.json({ ok: true, service: 'odds-backend-gpt', root: true });
 });
 
-app.use('/api/health', healthRouter);
-app.use('/api/gpt', gptRouter);  // read-only endpoints for GPT
+// HEALTH (no auth, explicit path)
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'odds-backend-gpt',
+    env: process.env.NODE_ENV || 'dev',
+    time: new Date().toISOString()
+  });
+});
 
-app.get('/', (req, res) => res.json({ ok: true, service: process.env.SERVICE_NAME || 'odds-backend-gpt' }));
+// 404 helper so you never see a blank "Not Found"
+app.use((req, res) => {
+  res.status(404).json({ ok: false, reason: `No route: ${req.method} ${req.path}` });
+});
 
 const port = process.env.PORT || 10000;
-app.listen(port, () => console.log(`odds-backend-gpt listening on ${port}`));
+app.listen(port, () => console.log(`listening on ${port}`));
