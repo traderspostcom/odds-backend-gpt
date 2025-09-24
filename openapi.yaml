@@ -1,0 +1,55 @@
+openapi: 3.1.0
+info:
+  title: Odds Backend GPT
+  version: "1.0.0"
+servers:
+  - url: https://YOUR-RENDER-URL.onrender.com
+paths:
+  /api/gpt/scan:
+    get:
+      operationId: scanEvents
+      summary: Get normalized odds events and markets (no Telegram)
+      parameters:
+        - in: query
+          name: sport
+          required: true
+          schema: { type: string, example: mlb }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: regions
+          schema: { type: string, default: us }
+        - in: query
+          name: markets
+          schema: { type: string, default: h2h,spreads,totals }
+      responses:
+        "200":
+          description: OK
+  /api/gpt/markets:
+    get:
+      operationId: getMarkets
+      summary: Get markets for one event
+      parameters:
+        - in: query
+          name: sport
+          required: true
+          schema: { type: string, example: mlb }
+        - in: query
+          name: eventId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: markets
+          schema: { type: string, default: h2h,spreads,totals }
+      responses:
+        "200":
+          description: OK
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+security:
+  - apiKey: []
