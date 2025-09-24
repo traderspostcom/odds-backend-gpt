@@ -7,7 +7,8 @@ import morgan from 'morgan';
  * odds-backend-gpt
  *
  * Public:
- *   GET  /api/health
+ *   GET  /                      → basic hello
+ *   GET  /api/health            → health check
  *
  * Protected (x-api-key required if PUBLIC_API_KEY is set):
  *   GET  /api/gpt/sports
@@ -16,11 +17,6 @@ import morgan from 'morgan';
  *   GET  /api/gpt/markets/preset?sport=<alias|key>&eventId=<id>&preset=<moneyline|spreads|totals|f5|first_half|props_basic>
  *   GET  /api/gpt/parlay/price?format=<american|decimal>&legs=<csv_of_odds>
  *   GET  /api/diag/routes
- *
- * Notes:
- *  - Use /scan for listing events (featured markets only per The Odds API docs).
- *  - Use /markets for any market set, including F5, 1H, props (via event-odds endpoint).
- *  - /markets/preset gives you handy one-word presets Russ uses daily.
  */
 
 const app = express();
@@ -28,7 +24,11 @@ app.use(cors({ origin: '*', maxAge: 600 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
 
-// ---------- health (public) ----------
+// ---------- Public root & health ----------
+app.get('/', (req, res) => {
+  res.json({ ok: true, service: 'odds-backend-gpt', root: true });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -38,7 +38,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ---------- optional API key gate ----------
+// ---------- Optional API key gate (applies to everything below) ----------
 app.use((req, res, next) => {
   const required = process.env.PUBLIC_API_KEY;
   if (!required) return next(); // gate disabled if not set
@@ -48,11 +48,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---------- config ----------
+// ---------- Config ----------
 const ODDS_API_BASE = process.env.ODDS_API_BASE || 'https://api.the-odds-api.com/v4';
 const ODDS_API_KEY  = process.env.ODDS_API_KEY;
 
-// sport aliases -> The Odds API sport keys
 const SPORT_ALIASES = {
   // baseball
   mlb: 'baseball_mlb',
@@ -70,6 +69,7 @@ const SPORT_ALIASES = {
   atp: 'tennis_atp',
   wta: 'tennis_wta',
 };
+
 const resolveSportKey = (value) => {
   const v = String(value || '').trim().toLowerCase();
   if (!v) return null;
@@ -77,11 +77,10 @@ const resolveSportKey = (value) => {
   return SPORT_ALIASES[v] || null;
 };
 
-// helpers
 const qs = (obj) => new URLSearchParams(obj).toString();
 const sendErr = (res, reason, meta = {}) => res.json({ ok: false, reason, ...meta });
 
-// ---------- list sports ----------
+// ---------- Sports list ----------
 app.get('/api/gpt/sports', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
@@ -96,11 +95,7 @@ app.get('/api/gpt/sports', async (req, res) => {
   }
 });
 
-// ---------- event scan (featured markets only) ----------
-/**
- * /v4/sports/{sport}/odds returns ONLY featured markets (h2h, spreads, totals).
- * For F5/1H/props use /markets endpoint below.
- */
+// ---------- Event scan (featured markets only) ----------
 app.get('/api/gpt/scan', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
@@ -109,13 +104,11 @@ app.get('/api/gpt/scan', async (req, res) => {
     const limit = Number(req.query.limit ?? 10);
     const markets = String(req.query.markets || 'h2h,spreads,totals');
 
-    if (!sportKey) {
-      return sendErr(res, 'Invalid or missing ?sport. Try aliases like mlb, nfl, nba, nhl.');
-    }
+    if (!sportKey) return sendErr(res, 'Invalid or missing ?sport (try aliases: mlb, nfl, nba, nhl, ncaaf, ncaab)');
 
     const url = `${ODDS_API_BASE}/sports/${sportKey}/odds?` + qs({
       regions: 'us',
-      markets,                // featured only honored here
+      markets, // featured only honored here
       oddsFormat: 'american',
       dateFormat: 'iso',
       apiKey: ODDS_API_KEY,
@@ -140,15 +133,7 @@ app.get('/api/gpt/scan', async (req, res) => {
   }
 });
 
-// ---------- markets (flex: F5, 1H, props, etc.) ----------
-/**
- * Use /v4/sports/{sport}/events/{eventId}/odds with markets=<csv>
- * Examples of markets:
- *   Featured: h2h, spreads, totals
- *   MLB F5:  h2h_1st_5_innings, spreads_1st_5_innings, totals_1st_5_innings
- *   1st half (NFL/NBA, etc.): h2h_h1, spreads_h1, totals_h1
- *   Props (MLB): batter_home_run, batter_hits_over_under, batter_total_bases_over_under, pitcher_strikeouts (varies by book/coverage)
- */
+// ---------- Markets (F5, 1H, props, etc.) ----------
 app.get('/api/gpt/markets', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
@@ -157,13 +142,11 @@ app.get('/api/gpt/markets', async (req, res) => {
     const eventId  = String(req.query.eventId || '').trim();
     const markets  = String(req.query.markets || 'h2h');
 
-    if (!sportKey || !eventId) {
-      return sendErr(res, 'Missing sport or eventId');
-    }
+    if (!sportKey || !eventId) return sendErr(res, 'Missing sport or eventId');
 
     const url = `${ODDS_API_BASE}/sports/${sportKey}/events/${eventId}/odds?` + qs({
       regions: 'us',
-      markets,                // any supported market keys
+      markets, // any supported market keys
       oddsFormat: 'american',
       dateFormat: 'iso',
       apiKey: ODDS_API_KEY,
@@ -180,16 +163,7 @@ app.get('/api/gpt/markets', async (req, res) => {
   }
 });
 
-// ---------- presets (Russ-friendly shorthands) ----------
-/**
- * Presets:
- *  - moneyline     → h2h
- *  - spreads       → spreads
- *  - totals        → totals
- *  - f5            → (mlb) h2h_1st_5_innings,spreads_1st_5_innings,totals_1st_5_innings
- *  - first_half    → h2h_h1,spreads_h1,totals_h1
- *  - props_basic   → pitcher_strikeouts,batter_home_run,batter_hits_over_under,batter_total_bases_over_under
- */
+// ---------- Presets (moneyline, spreads, totals, F5, 1H, props) ----------
 const PRESETS = {
   moneyline: 'h2h',
   spreads: 'spreads',
@@ -207,13 +181,10 @@ app.get('/api/gpt/markets/preset', async (req, res) => {
     const eventId  = String(req.query.eventId || '').trim();
     const preset   = String(req.query.preset || '').trim().toLowerCase();
 
-    if (!sportKey || !eventId || !preset) {
-      return sendErr(res, 'Missing sport, eventId, or preset');
-    }
+    if (!sportKey || !eventId || !preset) return sendErr(res, 'Missing sport, eventId, or preset');
+
     let markets = PRESETS[preset];
     if (!markets) return sendErr(res, `Unknown preset "${preset}"`);
-
-    // guard: F5 really only makes sense for MLB keys
     if (preset === 'f5' && !sportKey.startsWith('baseball_')) {
       return sendErr(res, 'Preset "f5" is only valid for baseball sports (e.g., baseball_mlb)');
     }
@@ -237,25 +208,18 @@ app.get('/api/gpt/markets/preset', async (req, res) => {
   }
 });
 
-// ---------- parlay pricing ----------
-/**
- * GET /api/gpt/parlay/price?format=<american|decimal>&legs=<csv_of_odds>
- * Example:
- *   /api/gpt/parlay/price?format=american&legs=-110,-105,+120
- *   /api/gpt/parlay/price?format=decimal&legs=1.91,1.95,2.20
- * Returns combined price in both decimal & American with implied prob.
- */
+// ---------- Parlay pricing ----------
 function americanToDecimal(a) {
   const n = Number(a);
-  if (!isFinite(n) || n === 0) throw new Error('bad american');
+  if (!isFinite(n) || n === 0) throw new Error(`bad american leg: ${a}`);
   return n > 0 ? 1 + n / 100 : 1 + 100 / Math.abs(n);
 }
 function decimalToAmerican(d) {
   const n = Number(d);
-  if (n <= 1) throw new Error('bad decimal');
+  if (!isFinite(n) || n <= 1) throw new Error(`bad decimal: ${d}`);
   return n >= 2 ? Math.round((n - 1) * 100) : Math.round(-100 / (n - 1));
 }
-function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 app.get('/api/gpt/parlay/price', (req, res) => {
   try {
@@ -266,20 +230,17 @@ app.get('/api/gpt/parlay/price', (req, res) => {
     const legs = legsCsv.split(',').map(s => s.trim()).filter(Boolean);
     if (legs.length === 0) return sendErr(res, 'No legs provided');
 
-    const decimals = format === 'decimal'
-      ? legs.map(americanToDecimal.bind(null)) // oops reversed; handle below
-      : legs.map(americanToDecimal);
-
-    // if user said decimal, convert each from decimal, not american
     let decimalLegs;
-    if (format === 'decimal') {
+    if (format === 'american') {
+      decimalLegs = legs.map(americanToDecimal);
+    } else if (format === 'decimal') {
       decimalLegs = legs.map((d) => {
         const n = Number(d);
         if (!isFinite(n) || n <= 1) throw new Error(`bad decimal leg: ${d}`);
         return n;
       });
     } else {
-      decimalLegs = decimals;
+      return sendErr(res, `Unknown format "${format}" (use american|decimal)`);
     }
 
     const product = decimalLegs.reduce((acc, d) => acc * d, 1);
@@ -300,7 +261,7 @@ app.get('/api/gpt/parlay/price', (req, res) => {
   }
 });
 
-// ---------- diagnostics ----------
+// ---------- Diagnostics ----------
 app.get('/api/diag/routes', (req, res) => {
   const routes = [];
   app._router.stack.forEach((m) => {
@@ -317,15 +278,8 @@ app.get('/api/diag/routes', (req, res) => {
   res.json({ ok: true, routes });
 });
 
-// ---------- root + 404 ----------
-app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'odds-backend-gpt', root: true });
+// ---------- Start ----------
+const assigned = process.env.PORT ? Number(process.env.PORT) : 10000;
+app.listen(assigned, () => {
+  console.log(`odds-backend-gpt listening on ${assigned} (env.PORT=${process.env.PORT || 'unset'})`);
 });
-
-app.use((req, res) => {
-  res.status(404).json({ ok: false, reason: `No route: ${req.method} ${req.path}` });
-});
-
-// ---------- start ----------
-const port = process.env.PORT || 10000;
-app.listen(port, () => console.log(`odds-backend-gpt listening on ${port}`));
