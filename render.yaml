@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: odds-backend-gpt
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVICE_NAME
+        value: odds-backend-gpt
+      - key: ODDS_API_BASE
+        value: https://api.the-odds-api.com/v4
+      - key: ODDS_API_KEY
+        sync: false
+      - key: PUBLIC_API_KEY
+        sync: false
+      - key: CACHE_TTL_SECONDS
+        value: "30"
+    healthCheckPath: /api/health
