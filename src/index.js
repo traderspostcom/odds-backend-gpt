@@ -17,7 +17,7 @@ app.get('/', (req, res) => {
   res.json({ ok: true, service: 'odds-backend-gpt', root: true });
 });
 
-// ---------------- Health (patched) ----------------
+// ---------------- Health (real check) ----------------
 app.get('/api/health', async (req, res) => {
   try {
     const r = await fetch(`${ODDS_API_BASE}/health`, {
@@ -105,13 +105,16 @@ app.get('/api/gpt/sports', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
     const url = `${ODDS_API_BASE}/sports`;
+
     const r = await fetch(url, {
       headers: { "Authorization": `Bearer ${ODDS_API_KEY}` }
     });
+
     const txt = await r.text();
     const usage = extractUsage(r);
     if (!r.ok) return sendErr(res, `Odds API ${r.status}`, { upstream: safeParse(txt), usage });
     const data = safeParse(txt);
+
     logUsage('sports', usage);
     res.json({ ok: true, count: data?.length || 0, sports: data, usage });
   } catch (err) {
@@ -123,6 +126,7 @@ app.get('/api/gpt/sports', async (req, res) => {
 app.get('/api/gpt/scan', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
+
     const sportKey = resolveSportKey(req.query.sport);
     const limit = Number(req.query.limit ?? 10);
     const markets = String(req.query.markets || 'h2h,spreads,totals');
@@ -138,6 +142,7 @@ app.get('/api/gpt/scan', async (req, res) => {
     const r = await fetch(url, {
       headers: { "Authorization": `Bearer ${ODDS_API_KEY}` }
     });
+
     const txt = await r.text();
     const usage = extractUsage(r);
     if (!r.ok) return sendErr(res, `Odds API ${r.status}`, { upstream: safeParse(txt), usage });
@@ -163,6 +168,7 @@ app.get('/api/gpt/scan', async (req, res) => {
 app.get('/api/gpt/markets', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
+
     const sportKey = resolveSportKey(req.query.sport);
     const eventId  = String(req.query.eventId || '').trim();
     const markets  = String(req.query.markets || 'h2h');
@@ -178,6 +184,7 @@ app.get('/api/gpt/markets', async (req, res) => {
     const r = await fetch(url, {
       headers: { "Authorization": `Bearer ${ODDS_API_KEY}` }
     });
+
     const txt = await r.text();
     const usage = extractUsage(r);
     if (!r.ok) return sendErr(res, `Odds API ${r.status}`, { upstream: safeParse(txt), usage });
@@ -203,6 +210,7 @@ const PRESETS = {
 app.get('/api/gpt/markets/preset', async (req, res) => {
   try {
     if (!ODDS_API_KEY) return sendErr(res, 'Set ODDS_API_KEY in Render env');
+
     const sportKey = resolveSportKey(req.query.sport);
     const eventId  = String(req.query.eventId || '').trim();
     const preset   = String(req.query.preset || '').trim().toLowerCase();
@@ -224,6 +232,7 @@ app.get('/api/gpt/markets/preset', async (req, res) => {
     const r = await fetch(url, {
       headers: { "Authorization": `Bearer ${ODDS_API_KEY}` }
     });
+
     const txt = await r.text();
     const usage = extractUsage(r);
     if (!r.ok) return sendErr(res, `Odds API ${r.status}`, { upstream: safeParse(txt), usage });
